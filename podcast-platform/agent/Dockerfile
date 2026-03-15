@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "echo 'Running migrations...' && alembic upgrade head && echo 'Migrations done, starting server...' && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "alembic upgrade head 2>&1 || echo 'Migration failed, continuing...' && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
