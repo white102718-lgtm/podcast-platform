@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+alembic
+openai
+anthropic
+pydub
+noisereduce
+pyloudnorm
+numpy
+python-multipart
+python-dotenv
+boto3
