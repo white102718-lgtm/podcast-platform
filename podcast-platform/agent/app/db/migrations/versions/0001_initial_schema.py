@@ -6,7 +6,9 @@ Create Date: 2026-03-13
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+TIMESTAMPTZ = sa.TIMESTAMP(timezone=True)
 
 revision = "0001"
 down_revision = None
