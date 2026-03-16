@@ -8,18 +8,19 @@ from app.config import ALLOWED_ORIGINS
 
 async def run_migrations():
     import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        capture_output=True, text=True
-    )
+
+    def _run():
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            capture_output=True, text=True
+        )
+
+    result = await asyncio.to_thread(_run)
     if result.stdout:
         print(result.stdout)
     if result.stderr:
         print(result.stderr)
-    if result.returncode != 0:
-        print(f"Migration failed with code {result.returncode}")
-    else:
-        print("Migrations complete.")
+    print(f"Migration {'complete' if result.returncode == 0 else f'failed (code {result.returncode})'}")
 
 
 @asynccontextmanager
