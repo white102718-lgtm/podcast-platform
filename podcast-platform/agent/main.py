@@ -1,13 +1,12 @@
 from contextlib import asynccontextmanager
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import projects, recordings, edit_sessions, content
 from app.config import ALLOWED_ORIGINS
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Run migrations on startup
+async def run_migrations():
     import subprocess, sys
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -18,7 +17,15 @@ async def lifespan(app: FastAPI):
     if result.stderr:
         print(result.stderr)
     if result.returncode != 0:
-        print(f"Migration failed with code {result.returncode}, continuing anyway")
+        print(f"Migration failed with code {result.returncode}")
+    else:
+        print("Migrations complete.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run migrations in background so uvicorn starts immediately
+    asyncio.create_task(run_migrations())
     yield
 
 
