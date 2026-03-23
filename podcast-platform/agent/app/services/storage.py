@@ -1,7 +1,8 @@
 import os
+from urllib.parse import urlparse, urlunparse
 import boto3
 from botocore.client import Config
-from app.config import S3_BUCKET, S3_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+from app.config import S3_BUCKET, S3_ENDPOINT_URL, S3_PRESIGN_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
 
 def get_s3():
@@ -41,6 +42,32 @@ def get_presigned_url(s3_key: str, expires: int = 3600) -> str:
         Params={"Bucket": S3_BUCKET, "Key": s3_key},
         ExpiresIn=expires,
     )
+
+
+def _rewrite_host(url: str, public_base: str) -> str:
+    """Replace the host (scheme+netloc) of a presigned URL with a public/CORS-enabled domain."""
+    parsed = urlparse(url)
+    pub = urlparse(public_base)
+    return urlunparse(parsed._replace(scheme=pub.scheme, netloc=pub.netloc))
+
+
+def generate_presigned_put_url(s3_key: str, content_type: str, expires: int = 3600) -> str:
+    """Return a presigned PUT URL for direct browser upload."""
+    s3 = get_s3()
+    url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": S3_BUCKET, "Key": s3_key, "ContentType": content_type},
+        ExpiresIn=expires,
+    )
+    if S3_PRESIGN_URL:
+        url = _rewrite_host(url, S3_PRESIGN_URL)
+    return url
+
+
+def head_object(s3_key: str) -> dict:
+    """HEAD an S3 object. Raises ClientError if not found."""
+    s3 = get_s3()
+    return s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
 
 
 def delete_file(s3_key: str) -> None:

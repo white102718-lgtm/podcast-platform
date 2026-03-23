@@ -14,6 +14,20 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// Global error event — App.tsx listens to this
+api.interceptors.response.use(
+  r => r,
+  err => {
+    const msg: string =
+      err?.response?.data?.detail ||
+      err?.response?.data?.message ||
+      err?.message ||
+      '请求失败'
+    window.dispatchEvent(new CustomEvent('api-error', { detail: msg }))
+    return Promise.reject(err)
+  }
+)
+
 // Projects
 export const createProject = (title: string, description?: string) =>
   api.post<Project>('/projects', { title, description }).then(r => r.data)
@@ -24,12 +38,53 @@ export const listProjects = () =>
 export const getProject = (id: string) =>
   api.get<Project>(`/projects/${id}`).then(r => r.data)
 
-// Recordings
-export const uploadRecording = (projectId: string, file: File) => {
-  const form = new FormData()
-  form.append('file', file)
-  return api.post<Recording>(`/projects/${projectId}/recordings`, form).then(r => r.data)
+// Recordings — direct-to-S3 upload flow
+interface InitiateUploadBody {
+  filename: string
+  content_type: string
+  file_size: number
+  duration_ms: number | null
+  sample_rate: number | null
+  channels: number | null
 }
+
+interface InitiateUploadResponse {
+  recording: Recording
+  upload_url: string
+}
+
+export const initiateUpload = (projectId: string, body: InitiateUploadBody) =>
+  api.post<InitiateUploadResponse>(`/projects/${projectId}/recordings/initiate`, body).then(r => r.data)
+
+export const uploadToS3 = (
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress?: (pct: number) => void,
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', contentType)
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(new Error(`存储上传失败 (HTTP ${xhr.status}): ${xhr.responseText?.slice(0, 200) || 'no body'}`))
+      }
+    }
+    xhr.onerror = () => {
+      reject(new Error('存储上传网络错误，请检查 R2/S3 CORS 配置是否允许当前域名 PUT 请求'))
+    }
+    xhr.ontimeout = () => reject(new Error('存储上传超时'))
+    xhr.send(file)
+  })
+
+export const confirmUpload = (recordingId: string) =>
+  api.post<Recording>(`/recordings/${recordingId}/confirm-upload`).then(r => r.data)
 
 export const getRecording = (id: string) =>
   api.get<Recording>(`/recordings/${id}`).then(r => r.data)
@@ -50,6 +105,9 @@ export const detectSilences = (
   ).then(r => r.data)
 
 // Edit sessions
+export const getLatestSession = (transcriptId: string) =>
+  api.get<EditSession>(`/transcripts/${transcriptId}/sessions/latest`).then(r => r.data)
+
 export const createSession = (transcriptId: string) =>
   api.post<EditSession>(`/transcripts/${transcriptId}/sessions`).then(r => r.data)
 

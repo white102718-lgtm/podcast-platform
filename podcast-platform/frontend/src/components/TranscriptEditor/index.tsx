@@ -1,41 +1,9 @@
-import React, { useCallback, useRef } from 'react'
-import { useStore, computeDeletedRanges } from '@/store'
+import React from 'react'
+import { useStore } from '@/store'
 import { WordToken } from './WordToken'
-import { EditToolbar } from './EditToolbar'
 
 export function TranscriptEditor() {
-  const { transcript, session, editedText, setEditedText, autosaveText, addOperation, currentTimeMs } = useStore()
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleTextChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newText = e.target.value
-      setEditedText(newText)
-
-      // debounced autosave
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-      autosaveTimer.current = setTimeout(async () => {
-        await autosaveText()
-
-        // compute deleted ranges and post operations
-        if (!transcript) return
-        const ranges = computeDeletedRanges(transcript.words, newText)
-        for (const range of ranges) {
-          // only add if not already covered by existing operations
-          const alreadyCovered = session?.operations.some(
-            op => op.payload.start_ms === range.start_ms && op.payload.end_ms === range.end_ms
-          )
-          if (!alreadyCovered) {
-            await addOperation({
-              op_type: 'delete_range',
-              payload: { ...range, reason: 'user_delete' },
-            })
-          }
-        }
-      }, 1000)
-    },
-    [transcript, session, setEditedText, autosaveText, addOperation]
-  )
+  const { transcript, session, currentTimeMs } = useStore()
 
   if (!transcript || !session) return null
 
@@ -50,53 +18,27 @@ export function TranscriptEditor() {
   })
 
   return (
-    <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <EditToolbar />
-
-      {/* Word token view — read-only visual with cut highlights */}
-      <div
-        style={{
-          padding: '1rem',
-          border: '1px solid #e5e7eb',
-          borderRadius: 6,
-          marginBottom: '1rem',
-          lineHeight: 1.8,
-          maxHeight: 200,
-          overflowY: 'auto',
-          background: '#fff',
-        }}
-      >
-        {transcript.words.map((w, i) => (
-          <WordToken
-            key={i}
-            word={w}
-            index={i}
-            isDeleted={deletedMs.has(String(i))}
-            isActive={currentTimeMs >= w.start_ms && currentTimeMs < w.end_ms}
-          />
-        ))}
+    <div className="flex flex-col flex-1 bg-white border border-slate-200 rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <span className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">词级标注</span>
+        <span className="text-[11px] text-slate-400">点击词语跳转到对应音频位置</span>
       </div>
 
-      {/* Editable text area */}
-      <textarea
-        value={editedText}
-        onChange={handleTextChange}
-        style={{
-          flex: 1,
-          minHeight: 300,
-          padding: '0.75rem',
-          fontSize: 15,
-          lineHeight: 1.7,
-          border: '1px solid #e5e7eb',
-          borderRadius: 6,
-          resize: 'vertical',
-          fontFamily: 'inherit',
-        }}
-        placeholder="Transcript will appear here. Delete text to cut the corresponding audio."
-      />
-      <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-        Edits auto-save after 1 second. Deleted text = audio cut on export.
-      </p>
+      {/* Word token view - scrollable */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex flex-wrap gap-1 leading-[1.9]">
+          {transcript.words.map((w, i) => (
+            <WordToken
+              key={i}
+              word={w}
+              index={i}
+              isDeleted={deletedMs.has(String(i))}
+              isActive={currentTimeMs >= w.start_ms && currentTimeMs < w.end_ms}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,20 +1,42 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useStore } from '@/store'
-import { ProjectList } from '@/components/ProjectList'
+import { Sidebar } from '@/components/Sidebar'
 import { RecordingUploader } from '@/components/RecordingUploader'
 import { TranscriptEditor } from '@/components/TranscriptEditor'
 import { WaveformViewer } from '@/components/WaveformViewer'
-import { ExportPanel } from '@/components/ExportPanel'
+import { ActionPanel } from '@/components/ActionPanel'
 import { ApiKeySettings } from '@/components/ApiKeySettings'
+
+function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000)
+    return () => clearTimeout(t)
+  }, [message, onDismiss])
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-2.5 rounded-lg text-[13px] z-[9999] flex items-center gap-3 shadow-xl max-w-[480px]">
+      <span className="text-red-400">✕</span>
+      <span className="flex-1">{message}</span>
+      <button onClick={onDismiss} className="bg-transparent border-none text-slate-400 cursor-pointer text-base leading-none hover:text-slate-200">×</button>
+    </div>
+  )
+}
 
 export function App() {
   const { currentProject, session, currentRecording, openaiKey, anthropicKey } = useStore()
   const [showSettings, setShowSettings] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const keysSet = openaiKey && anthropicKey
 
-  // Prompt for keys on first load if missing
-  React.useEffect(() => {
+  useEffect(() => {
     if (!openaiKey || !anthropicKey) setShowSettings(true)
+  }, [])
+
+  // Listen for global API errors from axios interceptor
+  useEffect(() => {
+    const handler = (e: Event) => setErrorMsg((e as CustomEvent<string>).detail)
+    window.addEventListener('api-error', handler)
+    return () => window.removeEventListener('api-error', handler)
   }, [])
 
   const audioUrl = currentRecording
@@ -22,56 +44,63 @@ export function App() {
     : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      {/* Global header */}
-      <header style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12 }}>
-        {currentProject && (
-          <button
-            onClick={() => useStore.setState({ currentProject: null, session: null, transcript: null, currentRecording: null, editedText: '', exportId: null, exportStatus: null })}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: 13 }}
-          >
-            ← Projects
-          </button>
-        )}
-        <h2 style={{ margin: 0, fontSize: 16, flex: 1 }}>
-          {currentProject ? currentProject.title : 'Podcast Platform'}
-        </h2>
-        <button
-          onClick={() => setShowSettings(true)}
-          style={{
-            padding: '4px 12px',
-            fontSize: 12,
-            borderRadius: 4,
-            border: '1px solid #d1d5db',
-            background: keysSet ? '#f0fdf4' : '#fef3c7',
-            cursor: 'pointer',
-            color: keysSet ? '#166534' : '#92400e',
-          }}
-        >
-          {keysSet ? '⚙ API Keys ✓' : '⚙ Set API Keys'}
-        </button>
-      </header>
+    <div className="flex h-screen bg-slate-50">
+      {/* Sidebar */}
+      <Sidebar />
 
-      {/* Main content */}
-      {!currentProject ? (
-        <ProjectList />
-      ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {!session ? (
-            <RecordingUploader />
-          ) : (
+      {/* Main Content Area */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {/* Top Bar */}
+        <header className="flex items-center px-6 py-3.5 border-b border-slate-200 bg-white flex-shrink-0 gap-3">
+          <span className="text-[15px] font-semibold text-slate-900 flex-1">
+            {currentProject ? `${currentProject.title} — 创业者访谈录` : '我的项目'}
+          </span>
+          {session && (
             <>
-              {audioUrl && <WaveformViewer audioUrl={audioUrl} />}
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                <TranscriptEditor />
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 rounded-full">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                <span className="text-[11px] font-medium text-green-700">已转录</span>
               </div>
-              <ExportPanel />
+              <div className="w-px h-5 bg-slate-200" />
             </>
           )}
-        </div>
-      )}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+          >
+            <span className="text-sm text-slate-500">⚙</span>
+          </button>
+        </header>
+
+        {/* Editor Body */}
+        {!currentProject ? (
+          <div className="flex-1 flex items-center justify-center p-12">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">欢迎使用 PodCraft</h2>
+              <p className="text-slate-500">从左侧选择一个项目开始编辑</p>
+            </div>
+          </div>
+        ) : !session ? (
+          <RecordingUploader />
+        ) : (
+          <div className="flex flex-1 overflow-hidden">
+            {/* Center Editor Column */}
+            <div className="flex flex-col flex-1 p-6 gap-5 overflow-hidden">
+              {/* Word Tokens - takes most space */}
+              <TranscriptEditor />
+
+              {/* Waveform at bottom */}
+              {audioUrl && <WaveformViewer audioUrl={audioUrl} />}
+            </div>
+
+            {/* Right Action Panel */}
+            <ActionPanel />
+          </div>
+        )}
+      </div>
 
       {showSettings && <ApiKeySettings onClose={() => setShowSettings(false)} />}
+      {errorMsg && <ErrorToast message={errorMsg} onDismiss={() => setErrorMsg(null)} />}
     </div>
   )
 }

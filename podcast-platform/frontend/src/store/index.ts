@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Project, Recording, Transcript, EditSession, EditOperation, Word } from '@/types'
 import * as api from '@/api/client'
+import { extractAudioMetadata } from '@/utils/audioMetadata'
 
 const LS_OPENAI_KEY = 'podcast_openai_key'
 const LS_ANTHROPIC_KEY = 'podcast_anthropic_key'
@@ -22,7 +23,7 @@ interface AppStore {
   // Recording
   currentRecording: Recording | null
   setCurrentRecording: (r: Recording) => void
-  uploadRecording: (projectId: string, file: File) => Promise<Recording>
+  uploadRecording: (projectId: string, file: File, onProgress?: (pct: number) => void) => Promise<Recording>
   pollRecordingStatus: (id: string) => Promise<void>
 
   // Transcript + session
@@ -87,10 +88,44 @@ export const useStore = create<AppStore>((set, get) => ({
 
   setCurrentRecording: (r) => set({ currentRecording: r }),
 
-  uploadRecording: async (projectId, file) => {
-    const recording = await api.uploadRecording(projectId, file)
+  uploadRecording: async (projectId, file, onProgress) => {
+    const MAX_FILE_SIZE = 200 * 1024 * 1024 // 200MB
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`文件大小超过 200MB 限制（当前 ${(file.size / 1024 / 1024).toFixed(1)}MB）`)
+    }
+
+    // 1. Extract audio metadata in browser
+    let duration_ms: number | null = null
+    let sample_rate: number | null = null
+    let channels: number | null = null
+    try {
+      const meta = await extractAudioMetadata(file)
+      duration_ms = meta.duration_ms
+      sample_rate = meta.sample_rate
+      channels = meta.channels
+    } catch {
+      // metadata extraction is best-effort
+    }
+
+    // 2. Get presigned URL from backend
+    const contentType = file.type || 'audio/mpeg'
+    const { recording, upload_url } = await api.initiateUpload(projectId, {
+      filename: file.name,
+      content_type: contentType,
+      file_size: file.size,
+      duration_ms,
+      sample_rate,
+      channels,
+    })
     set({ currentRecording: recording })
-    return recording
+
+    // 3. Upload directly to S3/R2
+    await api.uploadToS3(upload_url, file, contentType, onProgress)
+
+    // 4. Confirm upload — status becomes "pending"
+    const confirmed = await api.confirmUpload(recording.id)
+    set({ currentRecording: confirmed })
+    return confirmed
   },
 
   pollRecordingStatus: async (id) => {
@@ -108,9 +143,14 @@ export const useStore = create<AppStore>((set, get) => ({
     const transcript = await api.getTranscript(recordingId)
     set({ transcript, editedText: transcript.full_text })
 
-    // create or reuse session — for simplicity always create new
-    const session = await api.createSession(transcript.id)
-    set({ session })
+    let session: EditSession
+    try {
+      session = await api.getLatestSession(transcript.id)
+      set({ session, editedText: session.edited_text })
+    } catch {
+      session = await api.createSession(transcript.id)
+      set({ session })
+    }
   },
 
   setEditedText: (text) => set({ editedText: text }),

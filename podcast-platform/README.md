@@ -1,17 +1,46 @@
-# Podcast Platform
+# 🎙 PodCraft - AI 播客编辑平台
 
-One-stop podcast creation platform. Upload audio → AI transcription → text-driven editing → export.
+一站式播客创作平台：上传音频 → AI 转录 → 智能编辑 → 一键导出
 
-## Architecture
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com)
+
+## ✨ 新版本亮点 (v2.0.0)
+
+### 🎨 全新三栏工作台
+- **左侧边栏**：项目导航，一键切换
+- **中间编辑区**：词级标注 + 波形图，一屏完成所有编辑
+- **右侧操作面板**：快捷操作、音频增强、编辑统计、AI 生成
+
+### 🎚 音频增强功能（新增）
+- **录音室级 EQ**：专业均衡器调节
+- **音频平衡**：自动调节高低音
+
+### 🎵 波形图增强
+- 播放/暂停控制
+- 时间显示
+- 缩放控制（+ / −）
+- 高度可调（60px - 200px）
+
+### 📊 实时编辑统计
+- 剪切次数统计
+- 节省时间计算
+- 时长对比（原始 vs 剪辑后）
+
+## 🏗️ 架构
 
 ```
-frontend/   React + TypeScript (Vite) — deploy to Vercel
-agent/      FastAPI + Python — deploy to Railway
-            PostgreSQL provided by Railway
-            Audio files stored in S3 / Cloudflare R2
+frontend/   React 18 + TypeScript + Vite + Tailwind CSS
+            → 部署到 Vercel
+
+agent/      FastAPI + Python + SQLAlchemy
+            → 部署到 Railway
+            → PostgreSQL (Railway 提供)
+            → 音频文件存储在 S3 / Cloudflare R2
 ```
 
-Users enter their own OpenAI and Anthropic API keys in the browser. Keys are stored in localStorage and sent as request headers — never stored on the server.
+**安全设计**：用户在浏览器中输入自己的 OpenAI 和 Anthropic API 密钥。密钥存储在 localStorage 中，通过请求头发送 — 服务器永不存储。
 
 ---
 
@@ -39,18 +68,25 @@ AWS_SECRET_ACCESS_KEY your-r2-secret-access-key
 ALLOWED_ORIGINS       https://your-app.vercel.app
 ```
 
-5. Railway will build using `agent/Dockerfile` and run migrations + uvicorn automatically.
+5. Railway will build using nixpacks and run migrations + uvicorn automatically.
 6. Note your Railway public URL (e.g. `https://podcast-agent.up.railway.app`)
 
 ### 3. Deploy frontend to Vercel
 
-1. Import your GitHub repo on vercel.com, set **Root Directory** to `frontend/`
-2. Set environment variable:
+1. Update `frontend/vercel.json` — replace the destination with your Railway URL:
 
-```
-VITE_API_BASE_URL     https://podcast-agent.up.railway.app
+```json
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://your-backend.up.railway.app/:path*"
+    }
+  ]
+}
 ```
 
+2. Import your GitHub repo on vercel.com, set **Root Directory** to `frontend/`
 3. Deploy — Vercel builds with `npm run build` automatically.
 
 ### 4. Update CORS
@@ -96,12 +132,11 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local
-# Set VITE_API_BASE_URL=http://localhost:8000
-
 npm run dev
 # → http://localhost:5173
 ```
+
+The Vite dev server proxies `/api/*` to `http://localhost:8000` automatically — no `.env.local` needed for local dev.
 
 ---
 

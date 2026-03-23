@@ -9,7 +9,7 @@ export interface Recording {
   project_id: string
   filename: string
   duration_ms: number | null
-  status: 'pending' | 'transcribing' | 'ready' | 'error'
+  status: 'uploading' | 'pending' | 'transcribing' | 'ready' | 'error'
 }
 
 export interface Word {

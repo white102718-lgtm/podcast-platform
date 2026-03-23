@@ -54,6 +54,21 @@ class ExportOut(BaseModel):
         from_attributes = True
 
 
+@router.get("/transcripts/{transcript_id}/sessions/latest", response_model=SessionDetail)
+async def get_latest_session(transcript_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(EditSession)
+        .where(EditSession.transcript_id == transcript_id)
+        .order_by(EditSession.created_at.desc())
+        .limit(1)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "No session found")
+    await db.refresh(session, ["operations"])
+    return session
+
+
 @router.post("/transcripts/{transcript_id}/sessions", response_model=SessionOut, status_code=201)
 async def create_session(transcript_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     transcript = await db.get(Transcript, transcript_id)

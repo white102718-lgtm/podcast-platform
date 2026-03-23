@@ -1,11 +1,11 @@
 import uuid
 import os
-import shutil
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from botocore.exceptions import ClientError
 from app.db.database import get_db
 from app.models.models import Recording, Project, Transcript
 from app.services.whisper import transcribe_recording
@@ -25,6 +25,20 @@ class RecordingOut(BaseModel):
         from_attributes = True
 
 
+class InitiateUploadRequest(BaseModel):
+    filename: str
+    content_type: str
+    file_size: int | None = None
+    duration_ms: int | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+
+
+class InitiateUploadResponse(BaseModel):
+    recording: RecordingOut
+    upload_url: str
+
+
 class TranscriptOut(BaseModel):
     id: uuid.UUID
     recording_id: uuid.UUID
@@ -36,53 +50,58 @@ class TranscriptOut(BaseModel):
         from_attributes = True
 
 
-@router.post("/projects/{project_id}/recordings", response_model=RecordingOut, status_code=201)
-async def upload_recording(
+@router.post("/projects/{project_id}/recordings/initiate", response_model=InitiateUploadResponse, status_code=201)
+async def initiate_upload(
     project_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    body: InitiateUploadRequest,
     db: AsyncSession = Depends(get_db),
 ):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
 
-    # Save to /tmp first, then upload to S3
-    tmp_dir = f"/tmp/podcast-uploads/{project_id}"
-    os.makedirs(tmp_dir, exist_ok=True)
-    tmp_path = os.path.join(tmp_dir, file.filename)
+    MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
+    if body.file_size is not None and body.file_size > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large ({body.file_size / 1024 / 1024:.1f}MB). Max 200MB.")
 
-    with open(tmp_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    # Detect duration, sample rate, channels
-    duration_ms = None
-    sample_rate = None
-    channels = None
-    try:
-        from pydub import AudioSegment as _AS
-        audio = _AS.from_file(tmp_path)
-        duration_ms = len(audio)
-        sample_rate = audio.frame_rate
-        channels = audio.channels
-    except Exception:
-        pass
-
-    # Upload to S3
-    s3_key = f"recordings/{project_id}/{uuid.uuid4()}/{file.filename}"
-    storage.upload_file(tmp_path, s3_key, content_type=file.content_type or "audio/mpeg")
-    os.remove(tmp_path)
+    s3_key = f"recordings/{project_id}/{uuid.uuid4()}/{body.filename}"
 
     recording = Recording(
         project_id=project_id,
-        filename=file.filename,
-        file_path=s3_key,  # Store S3 key instead of local path
-        duration_ms=duration_ms,
-        sample_rate=sample_rate,
-        channels=channels,
-        status="pending",
+        filename=body.filename,
+        file_path=s3_key,
+        duration_ms=body.duration_ms,
+        sample_rate=body.sample_rate,
+        channels=body.channels,
+        status="uploading",
     )
     db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    upload_url = storage.generate_presigned_put_url(s3_key, body.content_type)
+
+    return InitiateUploadResponse(recording=RecordingOut.model_validate(recording), upload_url=upload_url)
+
+
+@router.post("/recordings/{recording_id}/confirm-upload", response_model=RecordingOut)
+async def confirm_upload(
+    recording_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    recording = await db.get(Recording, recording_id)
+    if not recording:
+        raise HTTPException(404, "Recording not found")
+    if recording.status != "uploading":
+        raise HTTPException(409, f"Recording status is '{recording.status}', expected 'uploading'")
+
+    # Verify the object actually landed in S3
+    try:
+        storage.head_object(recording.file_path)
+    except ClientError:
+        raise HTTPException(400, "File not found in storage. Upload may have failed.")
+
+    recording.status = "pending"
     await db.commit()
     await db.refresh(recording)
     return recording
@@ -108,6 +127,8 @@ async def start_transcription(
         raise HTTPException(404, "Recording not found")
     if recording.status == "transcribing":
         raise HTTPException(409, "Transcription already in progress")
+    if recording.status == "uploading":
+        raise HTTPException(409, "Upload still in progress")
 
     recording.status = "transcribing"
     await db.commit()
