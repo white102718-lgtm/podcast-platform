@@ -13,6 +13,7 @@ async def generate_show_notes(
     session_id: uuid.UUID,
     x_ai_provider: str = Header(..., alias="X-AI-Provider"),
     x_ai_key: str = Header(..., alias="X-AI-Key"),
+    x_ai_base_url: str | None = Header(None, alias="X-AI-Base-URL"),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(EditSession, session_id)
@@ -25,7 +26,7 @@ async def generate_show_notes(
         "3) Notable quotes, 4) Resources mentioned.\n\n"
         f"Transcript:\n{session.edited_text}"
     )
-    text = await chat_completion(x_ai_provider, x_ai_key, prompt)
+    text = await chat_completion(x_ai_provider, x_ai_key, prompt, x_ai_base_url)
     return {"show_notes": text}
 
 
@@ -34,6 +35,7 @@ async def generate_marketing_copy(
     session_id: uuid.UUID,
     x_ai_provider: str = Header(..., alias="X-AI-Provider"),
     x_ai_key: str = Header(..., alias="X-AI-Key"),
+    x_ai_base_url: str | None = Header(None, alias="X-AI-Base-URL"),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(EditSession, session_id)
@@ -47,5 +49,5 @@ async def generate_marketing_copy(
         "3) 公众号: professional, detailed intro paragraph\n\n"
         f"Transcript:\n{session.edited_text}"
     )
-    text = await chat_completion(x_ai_provider, x_ai_key, prompt)
+    text = await chat_completion(x_ai_provider, x_ai_key, prompt, x_ai_base_url)
     return {"marketing_copy": text}

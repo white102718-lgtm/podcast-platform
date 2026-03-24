@@ -15,15 +15,17 @@ const PROVIDERS: { value: AIProvider; label: string; placeholder: string; hint: 
 ]
 
 export function ApiKeySettings({ onClose }: Props) {
-  const { aiProvider, aiKey, setAiProvider, setAiKey } = useStore()
+  const { aiProvider, aiKey, aiBaseUrl, setAiProvider, setAiKey, setAiBaseUrl } = useStore()
   const [provider, setProvider] = useState<AIProvider>(aiProvider)
   const [key, setKey] = useState(aiKey)
+  const [baseUrl, setBaseUrl] = useState(aiBaseUrl)
 
   const current = PROVIDERS.find(p => p.value === provider)!
 
   const handleSave = () => {
     setAiProvider(provider)
     setAiKey(key)
+    setAiBaseUrl(baseUrl.trim())
     onClose()
   }
 
@@ -78,6 +80,24 @@ export function ApiKeySettings({ onClose }: Props) {
               placeholder={current.placeholder}
               className="w-full px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
+          </div>
+
+          {/* API Base URL (proxy) */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <label className="text-[13px] font-semibold text-slate-700">API Base URL</label>
+              <div className="px-1.5 py-0.5 bg-slate-100 rounded">
+                <span className="text-[10px] font-medium text-slate-500">选填</span>
+              </div>
+            </div>
+            <input
+              type="text"
+              value={baseUrl}
+              onChange={e => setBaseUrl(e.target.value)}
+              placeholder="留空使用官方地址，填写代理地址如 https://your-proxy.com/v1"
+              className="w-full px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+            <span className="text-[11px] text-slate-400">使用第三方代理时填写，如 one-api、new-api 等中转服务地址</span>
           </div>
         </div>
 

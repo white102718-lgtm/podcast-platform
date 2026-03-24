@@ -4,6 +4,10 @@ Unified AI provider abstraction.
 Supports: openai, anthropic, deepseek, gemini, qwen
 All providers share a single API key and are used for both
 transcription (speech-to-text) and text generation (show notes, marketing copy).
+
+When base_url is provided (proxy mode), it overrides the default endpoint
+for all providers. This enables compatibility with third-party proxy services
+like one-api, new-api, etc.
 """
 
 import uuid
@@ -19,91 +23,70 @@ logger = logging.getLogger(__name__)
 
 PROVIDERS = ("openai", "anthropic", "deepseek", "gemini", "qwen")
 
+# Default base URLs per provider (used when no custom base_url is set)
+DEFAULT_BASE_URLS = {
+    "openai": None,  # OpenAI SDK default
+    "anthropic": None,  # Anthropic SDK default
+    "deepseek": "https://api.deepseek.com",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
+
+DEFAULT_MODELS = {
+    "openai": "gpt-4o",
+    "anthropic": "claude-sonnet-4-20250514",
+    "deepseek": "deepseek-chat",
+    "gemini": "gemini-2.0-flash",
+    "qwen": "qwen-plus",
+}
+
+
+def _resolve_base_url(provider: str, custom_base_url: str | None) -> str | None:
+    """Return the base URL to use: custom if provided, otherwise provider default."""
+    if custom_base_url:
+        return custom_base_url
+    return DEFAULT_BASE_URLS.get(provider)
+
+
 # --- Chat completion (unified) ---
 
-async def chat_completion(provider: str, api_key: str, prompt: str) -> str:
+async def chat_completion(provider: str, api_key: str, prompt: str, base_url: str | None = None) -> str:
     """Send a single-turn prompt and return the assistant text."""
-    if provider == "openai":
-        return await _openai_chat(api_key, prompt)
-    elif provider == "anthropic":
-        return await _anthropic_chat(api_key, prompt)
-    elif provider == "deepseek":
-        return await _deepseek_chat(api_key, prompt)
-    elif provider == "gemini":
-        return await _gemini_chat(api_key, prompt)
-    elif provider == "qwen":
-        return await _qwen_chat(api_key, prompt)
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+    if provider == "anthropic" and not base_url:
+        return await _anthropic_chat(api_key, prompt, base_url)
+    # All other providers (including anthropic with proxy) use OpenAI-compatible API
+    return await _openai_compatible_chat(provider, api_key, prompt, base_url)
 
 
-async def _openai_chat(api_key: str, prompt: str) -> str:
+async def _openai_compatible_chat(provider: str, api_key: str, prompt: str, base_url: str | None = None) -> str:
     from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
+    resolved_url = _resolve_base_url(provider, base_url)
+    client = AsyncOpenAI(api_key=api_key, base_url=resolved_url)
     resp = await client.chat.completions.create(
-        model="gpt-4o",
+        model=DEFAULT_MODELS[provider],
         messages=[{"role": "user", "content": prompt}],
         max_tokens=2048,
     )
     return resp.choices[0].message.content
 
 
-async def _anthropic_chat(api_key: str, prompt: str) -> str:
+async def _anthropic_chat(api_key: str, prompt: str, base_url: str | None = None) -> str:
     from anthropic import AsyncAnthropic
-    client = AsyncAnthropic(api_key=api_key)
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    client = AsyncAnthropic(**kwargs)
     resp = await client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=DEFAULT_MODELS["anthropic"],
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
     return resp.content[0].text
 
 
-async def _deepseek_chat(api_key: str, prompt: str) -> str:
-    """DeepSeek uses OpenAI-compatible API."""
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-    resp = await client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
-    )
-    return resp.choices[0].message.content
-
-
-async def _gemini_chat(api_key: str, prompt: str) -> str:
-    """Google Gemini via OpenAI-compatible endpoint."""
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(
-        api_key=api_key,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    )
-    resp = await client.chat.completions.create(
-        model="gemini-2.0-flash",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
-    )
-    return resp.choices[0].message.content
-
-
-async def _qwen_chat(api_key: str, prompt: str) -> str:
-    """Qwen (Alibaba DashScope) via OpenAI-compatible endpoint."""
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(
-        api_key=api_key,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    )
-    resp = await client.chat.completions.create(
-        model="qwen-plus",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
-    )
-    return resp.choices[0].message.content
-
-
 # --- Transcription (speech-to-text) ---
 
-async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: str):
+async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: str, base_url: str | None = None):
     """Download audio from S3, transcribe via the chosen provider, save Transcript."""
     async with AsyncSessionLocal() as db:
         recording = await db.get(Recording, recording_id)
@@ -117,12 +100,11 @@ async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: 
             storage.download_file(recording.file_path, tmp_path)
 
             if provider == "openai":
-                text, words, language = await _openai_transcribe(api_key, tmp_path)
+                text, words, language = await _openai_transcribe(api_key, tmp_path, base_url)
             elif provider == "gemini":
-                text, words, language = await _gemini_transcribe(api_key, tmp_path)
+                text, words, language = await _gemini_transcribe(api_key, tmp_path, base_url)
             else:
-                # All other providers: use OpenAI Whisper-compatible or fallback
-                text, words, language = await _generic_transcribe(provider, api_key, tmp_path)
+                text, words, language = await _generic_transcribe(provider, api_key, tmp_path, base_url)
 
             transcript = Transcript(
                 recording_id=recording_id,
@@ -146,10 +128,11 @@ async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: 
                 os.remove(tmp_path)
 
 
-async def _openai_transcribe(api_key: str, file_path: str):
+async def _openai_transcribe(api_key: str, file_path: str, base_url: str | None = None):
     """Native OpenAI Whisper with word-level timestamps."""
     from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
+    resolved_url = _resolve_base_url("openai", base_url)
+    client = AsyncOpenAI(api_key=api_key, base_url=resolved_url)
 
     with open(file_path, "rb") as f:
         response = await client.audio.transcriptions.create(
@@ -171,7 +154,7 @@ async def _openai_transcribe(api_key: str, file_path: str):
     return response.text, words, response.language
 
 
-async def _gemini_transcribe(api_key: str, file_path: str):
+async def _gemini_transcribe(api_key: str, file_path: str, base_url: str | None = None):
     """Use Gemini's audio understanding to transcribe with timestamps."""
     import mimetypes
     mime_type = mimetypes.guess_type(file_path)[0] or "audio/mpeg"
@@ -188,10 +171,8 @@ async def _gemini_transcribe(api_key: str, file_path: str):
     )
 
     from openai import AsyncOpenAI
-    client = AsyncOpenAI(
-        api_key=api_key,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    )
+    resolved_url = _resolve_base_url("gemini", base_url)
+    client = AsyncOpenAI(api_key=api_key, base_url=resolved_url)
     resp = await client.chat.completions.create(
         model="gemini-2.0-flash",
         messages=[{
@@ -205,7 +186,6 @@ async def _gemini_transcribe(api_key: str, file_path: str):
 
     import json
     raw = resp.choices[0].message.content.strip()
-    # Strip markdown fences if present
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
     data = json.loads(raw)
@@ -217,7 +197,7 @@ async def _gemini_transcribe(api_key: str, file_path: str):
     return data.get("text", ""), words, data.get("language", "unknown")
 
 
-async def _generic_transcribe(provider: str, api_key: str, file_path: str):
+async def _generic_transcribe(provider: str, api_key: str, file_path: str, base_url: str | None = None):
     """
     For providers without native STT (DeepSeek, Anthropic, Qwen):
     Read audio, convert to base64, ask the LLM to transcribe.
@@ -226,7 +206,6 @@ async def _generic_transcribe(provider: str, api_key: str, file_path: str):
     import mimetypes
     mime_type = mimetypes.guess_type(file_path)[0] or "audio/mpeg"
 
-    # Check file size — most chat APIs have limits on inline data
     file_size = os.path.getsize(file_path)
     if file_size > 20 * 1024 * 1024:
         raise ValueError(
@@ -237,13 +216,9 @@ async def _generic_transcribe(provider: str, api_key: str, file_path: str):
     with open(file_path, "rb") as f:
         audio_bytes = f.read()
 
-    # For Anthropic, use native audio support if available
     if provider == "anthropic":
-        return await _anthropic_transcribe(api_key, audio_bytes, mime_type)
+        return await _anthropic_transcribe(api_key, audio_bytes, mime_type, base_url)
 
-    # For DeepSeek / Qwen — these don't support audio input natively.
-    # We'll try using OpenAI Whisper as a fallback since these providers
-    # don't have STT capabilities.
     raise ValueError(
         f"{provider} does not support speech-to-text. "
         "Please use OpenAI, Anthropic, or Gemini for transcription, "
@@ -251,13 +226,12 @@ async def _generic_transcribe(provider: str, api_key: str, file_path: str):
     )
 
 
-async def _anthropic_transcribe(api_key: str, audio_bytes: bytes, mime_type: str):
+async def _anthropic_transcribe(api_key: str, audio_bytes: bytes, mime_type: str, base_url: str | None = None):
     """Use Anthropic's audio input capability for transcription."""
     from anthropic import AsyncAnthropic
 
     audio_b64 = base64.b64encode(audio_bytes).decode()
 
-    # Map common MIME types to Anthropic's supported media types
     media_type_map = {
         "audio/mpeg": "audio/mpeg",
         "audio/mp3": "audio/mpeg",
@@ -269,7 +243,10 @@ async def _anthropic_transcribe(api_key: str, audio_bytes: bytes, mime_type: str
     }
     media_type = media_type_map.get(mime_type, "audio/mpeg")
 
-    client = AsyncAnthropic(api_key=api_key)
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    client = AsyncAnthropic(**kwargs)
 
     prompt = (
         "Transcribe this audio precisely. Return a JSON object with:\n"

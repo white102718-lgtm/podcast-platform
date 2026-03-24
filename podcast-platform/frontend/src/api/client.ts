@@ -9,8 +9,10 @@ const api = axios.create({
 api.interceptors.request.use(config => {
   const provider = localStorage.getItem('podcast_ai_provider') || 'openai'
   const key = localStorage.getItem('podcast_ai_key')
+  const baseUrl = localStorage.getItem('podcast_ai_base_url')
   config.headers['X-AI-Provider'] = provider
   if (key) config.headers['X-AI-Key'] = key
+  if (baseUrl) config.headers['X-AI-Base-URL'] = baseUrl
   return config
 })
 

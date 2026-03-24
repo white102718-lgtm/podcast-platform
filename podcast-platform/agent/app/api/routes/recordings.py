@@ -122,6 +122,7 @@ async def start_transcription(
     background_tasks: BackgroundTasks,
     x_ai_provider: str = Header(..., alias="X-AI-Provider"),
     x_ai_key: str = Header(..., alias="X-AI-Key"),
+    x_ai_base_url: str | None = Header(None, alias="X-AI-Base-URL"),
     db: AsyncSession = Depends(get_db),
 ):
     recording = await db.get(Recording, recording_id)
@@ -136,7 +137,7 @@ async def start_transcription(
     recording.error_message = None
     await db.commit()
 
-    background_tasks.add_task(transcribe_recording, recording_id, x_ai_provider, x_ai_key)
+    background_tasks.add_task(transcribe_recording, recording_id, x_ai_provider, x_ai_key, x_ai_base_url)
     return {"message": "Transcription started", "recording_id": recording_id}
 
 

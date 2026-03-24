@@ -5,6 +5,7 @@ import { extractAudioMetadata } from '@/utils/audioMetadata'
 
 const LS_AI_PROVIDER = 'podcast_ai_provider'
 const LS_AI_KEY = 'podcast_ai_key'
+const LS_AI_BASE_URL = 'podcast_ai_base_url'
 
 export type AIProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'qwen'
 
@@ -12,8 +13,10 @@ interface AppStore {
   // AI Provider
   aiProvider: AIProvider
   aiKey: string
+  aiBaseUrl: string
   setAiProvider: (p: AIProvider) => void
   setAiKey: (k: string) => void
+  setAiBaseUrl: (u: string) => void
 
   // Projects
   projects: Project[]
@@ -55,6 +58,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Load from localStorage on init
   aiProvider: (localStorage.getItem(LS_AI_PROVIDER) as AIProvider) || 'openai',
   aiKey: localStorage.getItem(LS_AI_KEY) ?? '',
+  aiBaseUrl: localStorage.getItem(LS_AI_BASE_URL) ?? '',
 
   setAiProvider: (p) => {
     localStorage.setItem(LS_AI_PROVIDER, p)
@@ -63,6 +67,10 @@ export const useStore = create<AppStore>((set, get) => ({
   setAiKey: (k) => {
     localStorage.setItem(LS_AI_KEY, k)
     set({ aiKey: k })
+  },
+  setAiBaseUrl: (u) => {
+    localStorage.setItem(LS_AI_BASE_URL, u)
+    set({ aiBaseUrl: u })
   },
 
   projects: [],
