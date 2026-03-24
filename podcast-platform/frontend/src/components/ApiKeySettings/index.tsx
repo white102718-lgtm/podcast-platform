@@ -1,18 +1,29 @@
 import React, { useState } from 'react'
 import { useStore } from '@/store'
+import type { AIProvider } from '@/store'
 
 interface Props {
   onClose: () => void
 }
 
+const PROVIDERS: { value: AIProvider; label: string; placeholder: string; hint: string }[] = [
+  { value: 'openai', label: 'OpenAI', placeholder: 'sk-...', hint: '支持语音转文字 (Whisper) + 文本生成 (GPT-4o)' },
+  { value: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...', hint: '支持语音转文字 + 文本生成 (Claude)' },
+  { value: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...', hint: '仅支持文本生成，转录需切换到 OpenAI/Anthropic/Gemini' },
+  { value: 'gemini', label: 'Google Gemini', placeholder: 'AIza...', hint: '支持语音转文字 + 文本生成 (Gemini 2.0)' },
+  { value: 'qwen', label: '通义千问 (Qwen)', placeholder: 'sk-...', hint: '仅支持文本生成，转录需切换到 OpenAI/Anthropic/Gemini' },
+]
+
 export function ApiKeySettings({ onClose }: Props) {
-  const { openaiKey, anthropicKey, setOpenaiKey, setAnthropicKey } = useStore()
-  const [oKey, setOKey] = useState(openaiKey)
-  const [aKey, setAKey] = useState(anthropicKey)
+  const { aiProvider, aiKey, setAiProvider, setAiKey } = useStore()
+  const [provider, setProvider] = useState<AIProvider>(aiProvider)
+  const [key, setKey] = useState(aiKey)
+
+  const current = PROVIDERS.find(p => p.value === provider)!
 
   const handleSave = () => {
-    setOpenaiKey(oKey)
-    setAnthropicKey(aKey)
+    setAiProvider(provider)
+    setAiKey(key)
     onClose()
   }
 
@@ -30,45 +41,41 @@ export function ApiKeySettings({ onClose }: Props) {
           <div className="flex flex-col items-center gap-1.5">
             <h3 className="text-[22px] font-bold text-slate-900 tracking-tight">欢迎使用 PodCraft</h3>
             <p className="text-sm text-slate-500 text-center leading-[22px]">
-              开始之前，请设置你的 API 密钥。密钥仅保存在浏览器本地，不会上传到服务器。
+              选择一个 AI 服务商，所有功能（转录、生成 Show Notes、营销文案）都将使用同一个模型。
             </p>
           </div>
         </div>
 
         {/* Form fields */}
         <div className="flex flex-col gap-4.5">
-          {/* OpenAI Key */}
+          {/* Provider selector */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-semibold text-slate-700">AI 服务商</label>
+            <select
+              value={provider}
+              onChange={e => setProvider(e.target.value as AIProvider)}
+              className="w-full px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              {PROVIDERS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <span className="text-[11px] text-slate-400">{current.hint}</span>
+          </div>
+
+          {/* API Key */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5">
-              <label className="text-[13px] font-semibold text-slate-700">OpenAI API Key</label>
+              <label className="text-[13px] font-semibold text-slate-700">{current.label} API Key</label>
               <div className="px-1.5 py-0.5 bg-amber-100 rounded">
                 <span className="text-[10px] font-medium text-amber-800">必填</span>
               </div>
             </div>
-            <span className="text-[11px] text-slate-400">用于 Whisper 语音转文字</span>
             <input
               type="password"
-              value={oKey}
-              onChange={e => setOKey(e.target.value)}
-              placeholder="sk-..."
-              className="w-full px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* Anthropic Key */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <label className="text-[13px] font-semibold text-slate-700">Anthropic API Key</label>
-              <div className="px-1.5 py-0.5 bg-slate-100 rounded">
-                <span className="text-[10px] font-medium text-slate-600">可选</span>
-              </div>
-            </div>
-            <span className="text-[11px] text-slate-400">用于 AI 生成 Show Notes 和营销文案</span>
-            <input
-              type="password"
-              value={aKey}
-              onChange={e => setAKey(e.target.value)}
-              placeholder="sk-ant-..."
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              placeholder={current.placeholder}
               className="w-full px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -78,14 +85,15 @@ export function ApiKeySettings({ onClose }: Props) {
         <div className="flex items-start gap-2.5 px-3.5 py-3 bg-green-50 rounded-lg">
           <span className="text-sm flex-shrink-0 mt-0.5">🔒</span>
           <span className="text-xs text-green-700 leading-[18px]">
-            你的密钥通过 HTTPS 直接发送到 OpenAI / Anthropic，服务器不会存储任何密钥信息。
+            密钥仅保存在浏览器本地，通过 HTTPS 直接发送到对应服务商，服务器不会存储。
           </span>
         </div>
 
         {/* Action button */}
         <button
           onClick={handleSave}
-          className="w-full flex items-center justify-center py-2.75 bg-primary-500 hover:bg-primary-600 rounded-lg transition-colors"
+          disabled={!key.trim()}
+          className="w-full flex items-center justify-center py-2.75 bg-primary-500 hover:bg-primary-600 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
         >
           <span className="text-white font-semibold text-sm">保存并开始</span>
         </button>

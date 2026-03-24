@@ -5,12 +5,12 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
 })
 
-// Read keys directly from localStorage to avoid circular import with store
+// Inject unified AI provider headers from localStorage
 api.interceptors.request.use(config => {
-  const openaiKey = localStorage.getItem('podcast_openai_key')
-  const anthropicKey = localStorage.getItem('podcast_anthropic_key')
-  if (openaiKey) config.headers['X-OpenAI-Key'] = openaiKey
-  if (anthropicKey) config.headers['X-Anthropic-Key'] = anthropicKey
+  const provider = localStorage.getItem('podcast_ai_provider') || 'openai'
+  const key = localStorage.getItem('podcast_ai_key')
+  config.headers['X-AI-Provider'] = provider
+  if (key) config.headers['X-AI-Key'] = key
   return config
 })
 

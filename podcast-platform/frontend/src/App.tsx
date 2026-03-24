@@ -23,13 +23,12 @@ function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => 
 }
 
 export function App() {
-  const { currentProject, session, currentRecording, openaiKey, anthropicKey } = useStore()
+  const { currentProject, session, currentRecording, aiKey } = useStore()
   const [showSettings, setShowSettings] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const keysSet = openaiKey && anthropicKey
 
   useEffect(() => {
-    if (!openaiKey || !anthropicKey) setShowSettings(true)
+    if (!aiKey) setShowSettings(true)
   }, [])
 
   // Listen for global API errors from axios interceptor

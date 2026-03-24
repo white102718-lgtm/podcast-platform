@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from botocore.exceptions import ClientError
 from app.db.database import get_db
 from app.models.models import Recording, Project, Transcript
-from app.services.whisper import transcribe_recording
+from app.services.ai_provider import transcribe_recording
 from app.services import storage
 
 router = APIRouter(tags=["recordings"])
@@ -119,7 +119,8 @@ async def get_recording(recording_id: uuid.UUID, db: AsyncSession = Depends(get_
 async def start_transcription(
     recording_id: uuid.UUID,
     background_tasks: BackgroundTasks,
-    x_openai_key: str = Header(..., alias="X-OpenAI-Key"),
+    x_ai_provider: str = Header(..., alias="X-AI-Provider"),
+    x_ai_key: str = Header(..., alias="X-AI-Key"),
     db: AsyncSession = Depends(get_db),
 ):
     recording = await db.get(Recording, recording_id)
@@ -133,7 +134,7 @@ async def start_transcription(
     recording.status = "transcribing"
     await db.commit()
 
-    background_tasks.add_task(transcribe_recording, recording_id, x_openai_key)
+    background_tasks.add_task(transcribe_recording, recording_id, x_ai_provider, x_ai_key)
     return {"message": "Transcription started", "recording_id": recording_id}
 
 

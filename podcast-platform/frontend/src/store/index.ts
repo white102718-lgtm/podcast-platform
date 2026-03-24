@@ -3,15 +3,17 @@ import type { Project, Recording, Transcript, EditSession, EditOperation, Word }
 import * as api from '@/api/client'
 import { extractAudioMetadata } from '@/utils/audioMetadata'
 
-const LS_OPENAI_KEY = 'podcast_openai_key'
-const LS_ANTHROPIC_KEY = 'podcast_anthropic_key'
+const LS_AI_PROVIDER = 'podcast_ai_provider'
+const LS_AI_KEY = 'podcast_ai_key'
+
+export type AIProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'qwen'
 
 interface AppStore {
-  // API Keys
-  openaiKey: string
-  anthropicKey: string
-  setOpenaiKey: (k: string) => void
-  setAnthropicKey: (k: string) => void
+  // AI Provider
+  aiProvider: AIProvider
+  aiKey: string
+  setAiProvider: (p: AIProvider) => void
+  setAiKey: (k: string) => void
 
   // Projects
   projects: Project[]
@@ -50,17 +52,17 @@ interface AppStore {
 }
 
 export const useStore = create<AppStore>((set, get) => ({
-  // Load keys from localStorage on init
-  openaiKey: localStorage.getItem(LS_OPENAI_KEY) ?? '',
-  anthropicKey: localStorage.getItem(LS_ANTHROPIC_KEY) ?? '',
+  // Load from localStorage on init
+  aiProvider: (localStorage.getItem(LS_AI_PROVIDER) as AIProvider) || 'openai',
+  aiKey: localStorage.getItem(LS_AI_KEY) ?? '',
 
-  setOpenaiKey: (k) => {
-    localStorage.setItem(LS_OPENAI_KEY, k)
-    set({ openaiKey: k })
+  setAiProvider: (p) => {
+    localStorage.setItem(LS_AI_PROVIDER, p)
+    set({ aiProvider: p })
   },
-  setAnthropicKey: (k) => {
-    localStorage.setItem(LS_ANTHROPIC_KEY, k)
-    set({ anthropicKey: k })
+  setAiKey: (k) => {
+    localStorage.setItem(LS_AI_KEY, k)
+    set({ aiKey: k })
   },
 
   projects: [],
