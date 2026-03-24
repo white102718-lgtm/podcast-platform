@@ -109,25 +109,10 @@ export const useStore = create<AppStore>((set, get) => ({
       // metadata extraction is best-effort
     }
 
-    // 2. Get presigned URL from backend
-    const contentType = file.type || 'audio/mpeg'
-    const { recording, upload_url } = await api.initiateUpload(projectId, {
-      filename: file.name,
-      content_type: contentType,
-      file_size: file.size,
-      duration_ms,
-      sample_rate,
-      channels,
-    })
+    // 2. Upload through backend proxy (avoids R2 CORS issues)
+    const recording = await api.proxyUpload(projectId, file, { duration_ms, sample_rate, channels }, onProgress)
     set({ currentRecording: recording })
-
-    // 3. Upload directly to S3/R2
-    await api.uploadToS3(upload_url, file, contentType, onProgress)
-
-    // 4. Confirm upload — status becomes "pending"
-    const confirmed = await api.confirmUpload(recording.id)
-    set({ currentRecording: confirmed })
-    return confirmed
+    return recording
   },
 
   pollRecordingStatus: async (id) => {

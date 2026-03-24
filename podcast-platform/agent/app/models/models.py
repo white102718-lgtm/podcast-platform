@@ -31,6 +31,7 @@ class Recording(Base):
     sample_rate: Mapped[int | None] = mapped_column(Integer)
     channels: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TZ, default=datetime.utcnow)
 
     project: Mapped["Project"] = relationship(back_populates="recordings")

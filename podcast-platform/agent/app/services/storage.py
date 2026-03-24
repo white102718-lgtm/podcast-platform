@@ -52,15 +52,18 @@ def _rewrite_host(url: str, public_base: str) -> str:
 
 
 def generate_presigned_put_url(s3_key: str, content_type: str, expires: int = 3600) -> str:
-    """Return a presigned PUT URL for direct browser upload."""
+    """Return a presigned PUT URL for direct browser upload.
+
+    NOTE: Do NOT rewrite the host to S3_PRESIGN_URL here.
+    S3_PRESIGN_URL (pub-*.r2.dev) is Cloudflare R2's public read-only domain
+    and only supports GET requests. PUT must go to the actual R2 API endpoint.
+    """
     s3 = get_s3()
     url = s3.generate_presigned_url(
         "put_object",
         Params={"Bucket": S3_BUCKET, "Key": s3_key, "ContentType": content_type},
         ExpiresIn=expires,
     )
-    if S3_PRESIGN_URL:
-        url = _rewrite_host(url, S3_PRESIGN_URL)
     return url
 
 

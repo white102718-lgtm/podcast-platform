@@ -38,53 +38,26 @@ export const listProjects = () =>
 export const getProject = (id: string) =>
   api.get<Project>(`/projects/${id}`).then(r => r.data)
 
-// Recordings — direct-to-S3 upload flow
-interface InitiateUploadBody {
-  filename: string
-  content_type: string
-  file_size: number
-  duration_ms: number | null
-  sample_rate: number | null
-  channels: number | null
-}
-
-interface InitiateUploadResponse {
-  recording: Recording
-  upload_url: string
-}
-
-export const initiateUpload = (projectId: string, body: InitiateUploadBody) =>
-  api.post<InitiateUploadResponse>(`/projects/${projectId}/recordings/initiate`, body).then(r => r.data)
-
-export const uploadToS3 = (
-  url: string,
+// Recordings — upload through backend proxy (avoids R2 CORS issues)
+export const proxyUpload = (
+  projectId: string,
   file: File,
-  contentType: string,
+  metadata: { duration_ms: number | null; sample_rate: number | null; channels: number | null },
   onProgress?: (pct: number) => void,
-): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('PUT', url)
-    xhr.setRequestHeader('Content-Type', contentType)
-    xhr.upload.onprogress = (e) => {
-      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve()
-      } else {
-        reject(new Error(`存储上传失败 (HTTP ${xhr.status}): ${xhr.responseText?.slice(0, 200) || 'no body'}`))
-      }
-    }
-    xhr.onerror = () => {
-      reject(new Error('存储上传网络错误，请检查 R2/S3 CORS 配置是否允许当前域名 PUT 请求'))
-    }
-    xhr.ontimeout = () => reject(new Error('存储上传超时'))
-    xhr.send(file)
-  })
+): Promise<Recording> => {
+  const form = new FormData()
+  form.append('file', file)
+  if (metadata.duration_ms != null) form.append('duration_ms', String(metadata.duration_ms))
+  if (metadata.sample_rate != null) form.append('sample_rate', String(metadata.sample_rate))
+  if (metadata.channels != null) form.append('channels', String(metadata.channels))
 
-export const confirmUpload = (recordingId: string) =>
-  api.post<Recording>(`/recordings/${recordingId}/confirm-upload`).then(r => r.data)
+  return api.post<Recording>(`/projects/${projectId}/recordings/upload`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+    },
+  }).then(r => r.data)
+}
 
 export const getRecording = (id: string) =>
   api.get<Recording>(`/recordings/${id}`).then(r => r.data)

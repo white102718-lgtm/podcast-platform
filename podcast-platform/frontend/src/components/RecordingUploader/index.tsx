@@ -97,7 +97,7 @@ export function RecordingUploader() {
       } else {
         stopTranscribeProgress(false)
         setPhase('error')
-        setErrorMsg('Transcription failed. Please try again.')
+        setErrorMsg(r.error_message || '转录失败，请重试。')
       }
     }
     await poll()

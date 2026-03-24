@@ -1,6 +1,6 @@
 import uuid
 import os
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, UploadFile, File, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,6 +20,7 @@ class RecordingOut(BaseModel):
     filename: str
     duration_ms: int | None
     status: str
+    error_message: str | None = None
 
     class Config:
         from_attributes = True
@@ -132,6 +133,7 @@ async def start_transcription(
         raise HTTPException(409, "Upload still in progress")
 
     recording.status = "transcribing"
+    recording.error_message = None
     await db.commit()
 
     background_tasks.add_task(transcribe_recording, recording_id, x_ai_provider, x_ai_key)
@@ -186,3 +188,57 @@ async def detect_silences(
 
     os.remove(tmp_path)
     return {"silences": silences, "count": len(silences)}
+
+
+@router.post("/projects/{project_id}/recordings/upload", response_model=RecordingOut, status_code=201)
+async def proxy_upload(
+    project_id: uuid.UUID,
+    file: UploadFile = File(...),
+    duration_ms: int | None = Form(None),
+    sample_rate: int | None = Form(None),
+    channels: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload audio through the backend (avoids R2 CORS issues)."""
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    MAX_FILE_SIZE = 200 * 1024 * 1024
+    content_type = file.content_type or "audio/mpeg"
+    s3_key = f"recordings/{project_id}/{uuid.uuid4()}/{file.filename}"
+
+    # Stream to a temp file, then upload to S3
+    tmp_dir = f"/tmp/podcast-upload/{uuid.uuid4()}"
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_path = os.path.join(tmp_dir, file.filename or "upload.audio")
+
+    try:
+        size = 0
+        with open(tmp_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_FILE_SIZE:
+                    raise HTTPException(413, f"File too large (>{MAX_FILE_SIZE // 1024 // 1024}MB)")
+                f.write(chunk)
+
+        storage.upload_file(tmp_path, s3_key, content_type=content_type)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if os.path.exists(tmp_dir):
+            os.rmdir(tmp_dir)
+
+    recording = Recording(
+        project_id=project_id,
+        filename=file.filename or "upload.audio",
+        file_path=s3_key,
+        duration_ms=duration_ms,
+        sample_rate=sample_rate,
+        channels=channels,
+        status="pending",
+    )
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    return recording

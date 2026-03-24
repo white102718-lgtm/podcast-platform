@@ -10,6 +10,7 @@ export interface Recording {
   filename: string
   duration_ms: number | null
   status: 'uploading' | 'pending' | 'transcribing' | 'ready' | 'error'
+  error_message: string | null
 }
 
 export interface Word {

@@ -9,10 +9,13 @@ transcription (speech-to-text) and text generation (show notes, marketing copy).
 import uuid
 import os
 import base64
+import logging
 import httpx
 from app.db.database import AsyncSessionLocal
 from app.models.models import Recording, Transcript
 from app.services import storage
+
+logger = logging.getLogger(__name__)
 
 PROVIDERS = ("openai", "anthropic", "deepseek", "gemini", "qwen")
 
@@ -121,8 +124,6 @@ async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: 
                 # All other providers: use OpenAI Whisper-compatible or fallback
                 text, words, language = await _generic_transcribe(provider, api_key, tmp_path)
 
-            os.remove(tmp_path)
-
             transcript = Transcript(
                 recording_id=recording_id,
                 full_text=text,
@@ -134,9 +135,15 @@ async def transcribe_recording(recording_id: uuid.UUID, provider: str, api_key: 
             await db.commit()
 
         except Exception as e:
+            error_msg = str(e)
+            logger.error("Transcription failed for recording %s (provider=%s): %s", recording_id, provider, error_msg, exc_info=True)
             recording.status = "error"
+            recording.error_message = error_msg[:2000]
             await db.commit()
-            raise e
+        finally:
+            tmp_path = f"/tmp/podcast-transcribe/{recording_id}.audio"
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 
 async def _openai_transcribe(api_key: str, file_path: str):
